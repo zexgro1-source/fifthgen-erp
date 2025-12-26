@@ -1,79 +1,67 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // طلب مساعد للتخزين على شركة مستخدم
-    function getUserCompanyId() {
-      return get(/databases/$(database)/documents/memberships/$(request.auth.uid)).data.companyId;
+    // Helper functions for role-based access control
+    function isAuthenticated() {
+      return request.auth != null;
     }
-
-    // التحقق من أن المستخدم ناشط وعضو عي
-    function isActiveMember() {
-      let membership = get(/databases/$(database)/documents/memberships/$(request.auth.uid));
-      return membership.data.status == 'active';
+    
+    function isAdmin() {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
-
-    // المستخدمون
+    
+    function isManager() {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'manager'];
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Companies collection - admin only
+    match /companies/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Users collection
     match /users/{userId} {
-      allow read: if request.auth.uid == userId;
-      allow write: if request.auth.uid == userId;
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow write: if isAdmin();
+      allow create: if isAdmin();
     }
-
-    // عضوية المستخدمبن بالشركات
-    match /memberships/{membershipId} {
-      allow read: if request.auth.uid == resource.data.uid && isActiveMember();
-      allow create: if request.auth.uid == request.resource.data.uid;
+    
+    // Clients collection
+    match /clients/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
     }
-
-    // الشركات
-    match /companies/{companyId} {
-      allow read: if getUserCompanyId() == companyId && isActiveMember();
-      allow write: if false; // لا يمكن تعديل بيانات الشركة مباشرة
+    
+    // Projects collection
+    match /projects/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
     }
-
-    // العملاء
-    match /clients/{clientId} {
-      allow read: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow create: if request.resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow update: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow delete: if resource.data.companyId == getUserCompanyId() && isActiveMember();
+    
+    // Invoices collection
+    match /invoices/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
+      allow delete: if isAdmin();
     }
-
-    // المشاريع
-    match /projects/{projectId} {
-      allow read: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow create: if request.resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow update: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow delete: if resource.data.companyId == getUserCompanyId() && isActiveMember();
+    
+    // Payments collection
+    match /payments/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isManager();
     }
-
-    // المهام
-    match /tasks/{taskId} {
-      allow read: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow create: if request.resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow update: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow delete: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-    }
-
-    // الفواتير
-    match /invoices/{invoiceId} {
-      allow read: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow create: if request.resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow update: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow delete: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-    }
-
-    // العرضة المضافة
-    match /deliverables/{deliverableId} {
-      allow read: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow create: if request.resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow update: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow delete: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-    }
-
-    // نشاط النظام
-    match /activity/{activityId} {
-      allow read: if resource.data.companyId == getUserCompanyId() && isActiveMember();
-      allow create: if request.resource.data.companyId == getUserCompanyId() && isActiveMember();
+    
+    // Settings collection
+    match /settings/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }
